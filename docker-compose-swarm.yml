@@ -1,0 +1,100 @@
+version: '3.4'
+
+services:
+
+  etcd:
+    image: quay.io/coreos/etcd:v2.3.8
+    hostname: etcd
+    deploy:
+      endpoint_mode: dnsrr
+    networks:
+      - backend
+    command:
+      [
+        "-name",
+        "etcd0",
+        "-advertise-client-urls",
+        "http://127.0.0.1:2379,http://127.0.0.1:4001",
+        "-listen-client-urls",
+        "http://0.0.0.0:2379,http://0.0.0.0:4001",
+        "-initial-advertise-peer-urls",
+        "http://127.0.0.1:2380",
+        "-listen-peer-urls",
+        "http://0.0.0.0:2380",
+        "-initial-cluster",
+        "etcd0=http://127.0.0.1:2380",
+        "-initial-cluster-token",
+        "etcd-cluster-1",
+        "-initial-cluster",
+        "etcd0=http://127.0.0.1:2380",
+        "-initial-cluster-state",
+        "new"
+      ]
+    
+  node01:
+    image: percona/percona-xtradb-cluster:5.7
+    hostname: node01
+    deploy:
+      endpoint_mode: dnsrr
+    networks:
+      - backend
+    environment:
+      - CLUSTER_NAME=percona_cluster
+      - MYSQL_ROOT_PASSWORD=pass_test
+      - XTRABACKUP_PASSWORD=xtrabackup_password
+      - DISCOVERY_SERVICE=etcd:2379
+    volumes:
+      - ./wait-for-it.sh:/wait-for-it.sh
+
+  node02:
+    image: percona/percona-xtradb-cluster:5.7
+    hostname: node02
+    deploy:
+      endpoint_mode: dnsrr
+    networks:
+      - backend
+    environment:
+      - CLUSTER_NAME=percona_cluster
+      - MYSQL_ROOT_PASSWORD=pass_test
+      - XTRABACKUP_PASSWORD=xtrabackup_password
+      - DISCOVERY_SERVICE=etcd:2379
+    entrypoint: ./wait-for-it.sh --timeout=65 node01:3306 -- ./entrypoint.sh mysqld
+    volumes:
+      - ./wait-for-it.sh:/wait-for-it.sh
+
+  node03:
+    image: percona/percona-xtradb-cluster:5.7
+    hostname: node03
+    deploy:
+      endpoint_mode: dnsrr
+    networks:
+      - backend
+    environment:
+      - CLUSTER_NAME=percona_cluster
+      - MYSQL_ROOT_PASSWORD=pass_test
+      - XTRABACKUP_PASSWORD=xtrabackup_password
+      - DISCOVERY_SERVICE=etcd:2379
+    entrypoint: ./wait-for-it.sh --timeout=65 node02:3306 -- ./entrypoint.sh mysqld
+    volumes:
+      - ./wait-for-it.sh:/wait-for-it.sh
+      
+  proxysql:
+    image: percona_proxysql:1
+    hostname: proxysql
+    deploy:
+      endpoint_mode: dnsrr
+    networks:
+      - backend
+    environment:
+      - CLUSTER_NAME=percona_cluster
+      - MYSQL_ROOT_PASSWORD=pass_test
+      - MYSQL_PROXY_USER=user_test
+      - MYSQL_PROXY_PASSWORD=pass_test
+      - MYSQL_USER=user_test
+      - DISCOVERY_SERVICE=etcd:2379
+    entrypoint: ./wait-for-it.sh --timeout=65 node03:3306 -- ./entrypoint.sh /usr/bin/proxysql -f -c /etc/proxysql/proxysql.cnf --reload
+
+
+
+networks:
+  backend:
